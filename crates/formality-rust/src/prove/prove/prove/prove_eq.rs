@@ -5,8 +5,8 @@ use crate::grammar::{
 use crate::prove::prove::Constrained;
 use formality_core::judgment::FailureLocation;
 use formality_core::visit::CoreVisit;
+use formality_core::Deduplicate;
 use formality_core::{judgment_fn, Downcast, ProvenSet, Upcast};
-use formality_core::{Deduplicate, Upcasted};
 
 use crate::prove::prove::{
     decls::Program,
@@ -220,7 +220,6 @@ fn equate_variable(
         .iter()
         .filter(|(v, _)| v.is_a::<UniversalVar>())
         .map(|(v, p)| eq(v, p))
-        .upcasted()
         .collect();
 
     tracing::debug!("equated: constraints={:?}, goals={:?}", constraints, goals);

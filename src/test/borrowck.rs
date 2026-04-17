@@ -931,7 +931,10 @@ fn undeclared_universal_region_relationship() {
             }
         ]
 
-        expect_test::expect!["crates/formality-rust/src/prove/prove/prove/prove_outlives.rs:8:1: no applicable rules for prove_outlives { a: !lt_0, b: !lt_1, assumptions: {}, env: Env { variables: [!lt_0, !lt_1], bias: Soundness, pending: [], allow_pending_outlives: false } }"]
+        expect_test::expect![[r#"
+            crates/formality-rust/src/prove/prove/prove/prove_via.rs:9:1: no applicable rules for prove_via { goal: !lt_1 : !lt_2, via: @ wf(?lt_0), assumptions: {@ wf(?lt_0)}, env: Env { variables: [!lt_1, !lt_2, ?lt_0], bias: Soundness, pending: [], allow_pending_outlives: false } }
+
+            crates/formality-rust/src/prove/prove/prove/prove_outlives.rs:8:1: no applicable rules for prove_outlives { a: !lt_1, b: !lt_2, assumptions: {@ wf(?lt_0)}, env: Env { variables: [!lt_1, !lt_2, ?lt_0], bias: Soundness, pending: [], allow_pending_outlives: false } }"#]]
     )
 }
 
@@ -1895,9 +1898,101 @@ fn struct_with_mutable_reference_locks_local() {
                 }
             }
         ]
-        // FIXME(#304) -- This does not look like the error message we expect.
-        expect_test::expect!["crates/formality-rust/src/prove/prove/prove/prove_wf.rs:14:1: no applicable rules for prove_wf { goal: ?lt_0, assumptions: {}, env: Env { variables: [?lt_0], bias: Soundness, pending: [], allow_pending_outlives: true } }"]
+        expect_test::expect![[r#"
+            crates/formality-rust/src/prove/prove/prove/prove_via.rs:9:1: no applicable rules for prove_via { goal: @ wf(Wrapper<?lt_0>), via: @ wf(?lt_0), assumptions: {@ wf(?lt_0)}, env: Env { variables: [?lt_0], bias: Soundness, pending: [], allow_pending_outlives: true } }
+
+            crates/formality-rust/src/prove/prove/prove/prove_wf.rs:14:1: no applicable rules for prove_wf { goal: ?lt_0, assumptions: {@ wf(?lt_0)}, env: Env { variables: [?lt_0], bias: Soundness, pending: [], allow_pending_outlives: true } }"#]]
     )
+}
+
+// Divergent paths (aka return) should not propagate outlives, liveness
+#[test]
+fn loan_before_return_does_not_affect_merged_paths() {
+    crate::assert_ok!(
+        [
+            crate Foo {
+                fn reborrow<'a>(a: &mut 'a u8) -> &mut 'a u8 {
+                    exists<'r0, 'r1, 'r2, 'r3> {
+                        if true {
+                            let b: &mut 'r1 u8 = &mut 'r0 *a;
+                            return b;
+                        } else { }
+
+                        let c: &mut 'r3 u8 = &mut 'r2 *a;
+                        return c;
+                    }
+                }
+            }
+        ]
+    );
+}
+
+// Divergent paths (aka return) should not propagate outlives, liveness
+#[test]
+fn outlive_before_return_does_not_affect_merged_paths() {
+    crate::assert_ok!(
+        [
+            crate Foo {
+                fn reborrow<'a>(a: &mut 'a u8) -> &mut 'a u8 {
+                    exists<'r0, 'r1, 'r2, 'r3> {
+                        // This creates an outlives constraint
+                        let b: &mut 'r1 u8 = &mut 'r0 *a;
+                        if true {
+                            return b;
+                        } else {
+                            // this means the loan remains live
+                        }
+
+                        // If the outlives constraint propagated here,
+                        // we would get an error.
+                        let c: &mut 'r3 u8 = &mut 'r2 *a;
+                        return c;
+                    }
+                }
+            }
+        ]
+    );
+}
+
+// Divergent paths (aka return) should not propagate outlives, liveness
+#[test]
+fn loan_before_return_does_not_affect_dead_code_after() {
+    crate::assert_ok!(
+        [
+            crate Foo {
+                fn reborrow<'a>(a: &mut 'a u8) -> &mut 'a u8 {
+                    exists<'r0, 'r1, 'r2, 'r3> {
+                        let b: &mut 'r1 u8 = &mut 'r0 *a;
+                        return b;
+                        let c: &mut 'r3 u8 = &mut 'r2 *a;
+                        return c;
+                    }
+                }
+            }
+        ]
+    );
+}
+
+// Divergent paths (aka return) should not propagate outlives, liveness
+#[test]
+fn if_else_paths_independent() {
+    crate::assert_ok!(
+        [
+            crate Foo {
+                fn reborrow<'a>(a: &mut 'a u8) -> &mut 'a u8 {
+                    exists<'r0, 'r1, 'r2, 'r3> {
+                        if true {
+                            let b: &mut 'r1 u8 = &mut 'r0 *a;
+                            return b;
+                        } else {
+                            let c: &mut 'r3 u8 = &mut 'r2 *a;
+                            return c;
+                        }
+                    }
+                }
+            }
+        ]
+    );
 }
 
 #[test]
